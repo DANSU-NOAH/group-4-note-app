@@ -27,7 +27,7 @@
       <button class="btn ghost" id="exportBtn">⬇ Export</button>
       <button class="btn ghost" id="importBtn">⬆ Import</button>
       <button class="btn ghost" id="themeBtn">🌓 Theme</button>
-      <input type="file" id="importFile" accept="application/json" hidden>
+     <input type="file" id="importFile" multiple hidden>
     </div>
   </aside>
 
@@ -110,6 +110,8 @@
 </div>
 <div class="toasts" id="toasts"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/app.js"></script>
 <script>
   if (location.protocol === 'file:') {

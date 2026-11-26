@@ -366,6 +366,40 @@
     renderPreview(); scheduleSave();
   }
 
+    // ------------------------------------------------------------- file import (json, txt, md, docx, pdf, ...)
+  async function readFileAsText(f) {
+    const name = f.name.toLowerCase();
+
+    if (name.endsWith('.docx')) {
+      if (!window.mammoth) throw new Error('Word reader did not load. Check your internet and refresh.');
+      const r = await window.mammoth.extractRawText({ arrayBuffer: await f.arrayBuffer() });
+      return r.value;
+    }
+
+    if (name.endsWith('.pdf')) {
+      if (!window.pdfjsLib) throw new Error('PDF reader did not load. Check your internet and refresh.');
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const pdf = await window.pdfjsLib.getDocument({ data: await f.arrayBuffer() }).promise;
+      const pages = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const tc = await page.getTextContent();
+        pages.push(tc.items.map((it) => it.str + (it.hasEOL ? '\n' : ' ')).join('').trim());
+      }
+      const text = pages.join('\n\n').trim();
+      if (!text) throw new Error('No text found (this PDF may be a scanned image)');
+      return text;
+    }
+
+    if (name.endsWith('.doc')) {
+      throw new Error('Old .doc is not supported. Save it as .docx in Word first');
+    }
+
+    const text = await f.text();
+    if (text.includes('\u0000')) throw new Error('Unsupported file type');
+    return text;
+  }
   function wire() {
     $('#newBtn').onclick = newNote;
     $('#nav').onclick = (e) => {
@@ -414,13 +448,35 @@
     $('#themeBtn').onclick = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
     $('#exportBtn').onclick = () => { window.location.href = '/api/export'; };
     $('#importBtn').onclick = () => $('#importFile').click();
-    $('#importFile').onchange = guard(async (e) => {
-      const f = e.target.files[0]; if (!f) return;
-      let data;
-      try { data = JSON.parse(await f.text()); } catch { throw new Error('That file is not valid JSON'); }
-      const r = await api('/import', { method: 'POST', body: data });
-      toast(`Imported ${r.imported} note(s)` + (r.skipped ? `, skipped ${r.skipped}` : ''));
-      e.target.value = ''; refresh();
+        $('#importFile').onchange = guard(async (e) => {
+      const files = [...e.target.files];
+      if (!files.length) return;
+      let imported = 0;
+      const failed = [];
+
+      for (const f of files) {
+        try {
+          if (/\.json$/i.test(f.name)) {
+            let data;
+            try { data = JSON.parse(await f.text()); } catch { throw new Error('Not valid JSON'); }
+            const r = await api('/import', { method: 'POST', body: data });
+            imported += r.imported;
+          } else {
+            let text = await readFileAsText(f);
+            if (text.length > 100000) text = text.slice(0, 100000);
+            const title = f.name.replace(/\.[^.]+$/, '').slice(0, 200);
+            await api('/notes', { method: 'POST', body: { title, content: text } });
+            imported++;
+          }
+        } catch (err) {
+          failed.push(`${f.name}: ${err.message}`);
+        }
+      }
+
+      e.target.value = '';
+      if (imported) toast(`Imported ${imported} note(s)`);
+      failed.forEach((m) => toast(m, true));
+      refresh();
     });
     $('#modalClose').onclick = closeModal;
     $('#modalBack').onclick = (e) => { if (e.target.id === 'modalBack') closeModal(); };
